@@ -26,9 +26,20 @@ window.addEventListener('load', () => {
         painting = false;
         ctx.closePath();
         
-        // Hack to replace the line with a smooth one
-        undo (true);
-        drawSmoothLine(linePoints, ctx);
+        // Check for a square
+        squareCord = isSquare(linePoints, ctx);
+        if(squareCord){
+            undo(true);
+            ctx.beginPath();
+            ctx.rect(squareCord.x, squareCord.y, squareCord.width, squareCord.height);
+            ctx.stroke();
+            ctx.closePath();
+        }else{
+             // Smooth line
+            undo (true);
+            linePoints = drawSmoothLine(linePoints, ctx);
+        }
+        
         linePoints = []
         
     }
@@ -87,10 +98,74 @@ function resizeWindow(){
     canvas.width = window.innerWidth;
 }
 
+// Try and figure out if they drew a square
+function isSquare(queue, ctx){
+    if(queue.length < 15){
+        return;
+    }    
+    
+    // Are the start and end point pretty close?
+    xdelta = queue[0].x - queue[queue.length-1].x;
+    ydelta = queue[0].y - queue[queue.length-1].y;
+    distance = Math.sqrt(Math.pow(xdelta, 2) + Math.pow(ydelta, 2));
+    if(distance > 75){
+        return;
+    }
+    
+    totalPoints = queue.length;
+    checkInterval = 1;
+        
+    // Check if it's a square. We're looking for 3 right angles
+    let angleCount = 0;
+    let lastAngle = 0;
+    angles = []
+    for(let i=0; i < queue.length - checkInterval - 1; i+=checkInterval){
+        let angle = Math.abs(Math.atan2(queue[i+checkInterval].y - queue[i].y, queue[i+checkInterval].x - queue[i].x) * 180 / Math.PI);
+        angles.push(angle);
+        if(i == 0){
+            lastAngle = angle;
+        }else{
+            if(Math.abs(lastAngle - angle) > 60){
+                angleCount++;
+                lastAngle = angle;
+            }
+        }
+    }
+    
+    if(angleCount == 3){
+        // Get the max X, Y and min X, Y
+        let minX = queue[0].x;
+        let minY = queue[0].y;
+        let maxX = queue[0].x;
+        let maxY = queue[0].y;
+        for(let i = 0; i < queue.length; i++){
+            let x = queue[i].x;
+            let y = queue[i].y;
+            if(x > maxX){
+                maxX = x;
+            }
+            if(y > maxY){
+                maxY = y;
+            }
+            if(x < minX){
+                minX = x;
+            }
+            if(y < minY){
+                minY = y;
+            }
+        }
+        
+        return {x: minX, y: minY, width: maxX - minX, height: maxY - minY};
+    }
+    
+    return null
+        
+}
+
 // Smooth out a line given the points
 function drawSmoothLine(queue, currentCanvas){
         if(queue.length < 5){
-            return;
+            return [];
         }
     
         currentCanvas.beginPath();
@@ -133,4 +208,6 @@ function drawSmoothLine(queue, currentCanvas){
         currentCanvas.stroke();
         queue = [];
         currentCanvas.closePath();
+        
+        return tempQueue;
 }

@@ -12,7 +12,7 @@ window.addEventListener('load', () => {
     
     let painting = false;
 
-    setInterval(drawLoop, 20);
+    setInterval(drawLoop, 10);
     let redraw = false;
     function drawLoop(){
         if(redraw == true){
@@ -188,6 +188,52 @@ window.addEventListener('load', () => {
           redo();
         }
     });
+
+    // Touch events for phones
+    canvas.addEventListener("touchstart", function (e) {
+        let mousePos = getTouchPos(canvas, e);
+        let touch = e.touches[0];
+        let mouseEvent = new MouseEvent("mousedown", {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+            });
+        canvas.dispatchEvent(mouseEvent);
+    }, false);
+    canvas.addEventListener("touchend", function (e) {
+        let mouseEvent = new MouseEvent("mouseup", {});
+        canvas.dispatchEvent(mouseEvent);
+    }, false);
+    canvas.addEventListener("touchmove", function (e) {
+        let touch = e.touches[0];
+        let mouseEvent = new MouseEvent("mousemove", {
+            clientX: touch.clientX,
+            clientY: touch.clientY
+        });
+        canvas.dispatchEvent(mouseEvent);
+    }, false);
+    function getTouchPos(canvasDom, touchEvent) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: touchEvent.touches[0].clientX - rect.left,
+          y: touchEvent.touches[0].clientY - rect.top
+        };
+    }
+    // Prevent scrolling when touching the canvas
+    document.body.addEventListener("touchstart", function (e) {
+        if (e.target == canvas) {
+        e.preventDefault();
+        }
+    }, { capture: false, passive: false });
+    document.body.addEventListener("touchend", function (e) {
+        if (e.target == canvas) {
+        e.preventDefault();
+        }
+    }, { capture: false, passive: false });
+    document.body.addEventListener("touchmove", function (e) {
+        if (e.target == canvas) {
+        e.preventDefault();
+        }
+    }, { capture: false, passive: false });
 });
 
 window.addEventListener('resize', resizeWindow())
@@ -264,7 +310,7 @@ function isSquare(queue, ctx){
 // Smooth out a line given the points
 function makeSmoothLine(queue, currentCanvas){
         if(queue.length < 5){
-            return [];
+            return null;
         }
     
         var tempQueue1 = [queue[0]];

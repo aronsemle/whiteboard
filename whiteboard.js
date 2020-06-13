@@ -1,49 +1,132 @@
 window.addEventListener('load', () => {
     const canvas = document.querySelector("#canvas");
     const ctx = canvas.getContext('2d');
-    var undoStack = []
+
     var redoStack = []
+    var canvasObjects = []
+
+    // Temporary cache for points in a drawn line
     var linePoints = []
     
     resizeWindow();
     
     let painting = false;
+
+    setInterval(drawLoop, 20);
+    let redraw = false;
+    function drawLoop(){
+        if(redraw == true){
+            // Clear 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawShapes(ctx);
+        }
+        redraw = false
+    }
+
+    function drawShapes(drawContex){
+         // Redraw objects in order
+         for(let j=0; j < canvasObjects.length; j++){
+            switch(canvasObjects[j].type){
+                case 'line':
+                    line = canvasObjects[j]
+
+                    drawContex.beginPath();
+                    drawContex.moveTo(line.points[0].x, line.points[0].y);
+
+                    for (var i = 1; i < line.points.length - 2;  i = i+1) {
+                        var c = (line.points[i].x + line.points[i + 1].x) / 2;
+                        var d = (line.points[i].y + line.points[i + 1].y) / 2;
+                        drawContex.quadraticCurveTo(line.points[i].x, line.points[i].y, c, d);
+                    }
+            
+                    // For the last 2 points
+                    drawContex.quadraticCurveTo(
+                        line.points[i].x,
+                        line.points[i].y,
+                        line.points[i+1].x,
+                        line.points[i+1].y
+                        );
+                    drawContex.stroke();
+                    drawContex.closePath();
+
+                    break;
+
+                case 'rect':
+                    drawContex.beginPath();
+                    squareCord = canvasObjects[j];
+                    drawContex.rect(squareCord.x, squareCord.y, squareCord.width, squareCord.height);
+                    drawContex.stroke();
+                    drawContex.closePath();
+                    break;
+            }
+        }
+    }
     
+    var dragRect = null
+    var dragOffset = {x: 0, y: 0};
     function startPosition(e){
-        painting = true;
-        saveUndo();
-        
-        // Hack to remove the jagged line, and replace it with a smooth one
-        saveUndo();
-        
+        rect = hitDetection(e);
+        if(rect){
+            mouse = getMousePos(canvas, e)
+            dragRect = rect;
+            dragOffset.x = mouse.x - rect.x;
+            dragOffset.y = mouse.y - rect.y;
+            return;
+        }
+
+        painting = true;        
         ctx.lineWidth = 1;
         ctx.lineCap = "round";
         ctx.beginPath();
         
         draw(e);
     }
-    function finishedPosition(){
+    function finishedPosition(e){
+        if(dragRect){
+            dragRect = null
+            redraw = true;
+            return;
+        }
+        
         painting = false;
+        
         ctx.closePath();
         
         // Check for a square
         squareCord = isSquare(linePoints, ctx);
         if(squareCord){
-            undo(true);
-            ctx.beginPath();
-            ctx.rect(squareCord.x, squareCord.y, squareCord.width, squareCord.height);
-            ctx.stroke();
-            ctx.closePath();
+            rect = {type: 'rect', x: squareCord.x, y: squareCord.y, width: squareCord.width, height: squareCord.height};
+            canvasObjects.push(rect)
+            redraw = true;
+            
+            // We want to select the rectangle to allow the user to move it around
+            mouse = getMousePos(canvas, e)
+            dragRect = rect;
+            dragOffset.x = mouse.x - rect.x;
+            dragOffset.y = mouse.y - rect.y;
+
         }else{
              // Smooth line
-            undo (true);
-            linePoints = drawSmoothLine(linePoints, ctx);
+            linePoints = makeSmoothLine(linePoints);
+            if(linePoints){
+                canvasObjects.push({type: 'line', points: linePoints})
+                redraw = true;
+            }
         }
         
         linePoints = []
         
     }
+
     function draw(e){
+        if(dragRect){
+            mouse = getMousePos(canvas, e);
+            dragRect.x = mouse.x - dragOffset.x;
+            dragRect.y = mouse.y - dragOffset.y;
+            redraw = true;
+            return;
+        }
         if(!painting){
             return;
         }
@@ -55,28 +138,43 @@ window.addEventListener('load', () => {
         ctx.moveTo(e.clientX, e.clientY);
         ctx.closePath();
     }
-    
-    function saveUndo(){
-        undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+
+    function getMousePos(canvas, evt) {
+        var rect = canvas.getBoundingClientRect();
+        return {
+          x: evt.clientX - rect.left,
+          y: evt.clientY - rect.top
+        };
     }
-    function saveRedo(){
-        redoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-    }
     
-    function undo(skipRedo){
-        if(undoStack.length){
-            if(!skipRedo){
-                saveRedo();
-            }
-            ctx.putImageData(undoStack.pop(), 0, 0);
+    
+    function undo(){
+        if(canvasObjects.length){
+            redoStack.push(canvasObjects.pop());
+            redraw = true
         }
     }
     
     function redo(){
         if(redoStack.length){
-              saveUndo();
-              ctx.putImageData(redoStack.pop(), 0, 0);
+            canvasObjects.push(redoStack.pop());
+            redraw = true;
         }
+    }
+
+    function hitDetection (mouse){
+        x = mouse.offsetX;
+        y = mouse.offsetY;
+        for(let i = canvasObjects.length - 1; i >= 0; i--){
+            if(canvasObjects[i].type == 'rect'){
+                rect = canvasObjects[i]
+                if(rect.x <= mouse.x && mouse.x <= rect.x + rect.width &&
+                    rect.y <= mouse.y && mouse.y <= rect.y + rect.height){
+                        return rect;
+                    }
+            }
+        }
+       return null;
     }
     
     canvas.addEventListener("mousedown", startPosition);
@@ -121,7 +219,7 @@ function isSquare(queue, ctx){
     angles = []
     for(let i=0; i < queue.length - checkInterval - 1; i+=checkInterval){
         let angle = Math.abs(Math.atan2(queue[i+checkInterval].y - queue[i].y, queue[i+checkInterval].x - queue[i].x) * 180 / Math.PI);
-        angles.push(angle);
+        angles.push(Math.round(angle));
         if(i == 0){
             lastAngle = angle;
         }else{
@@ -131,6 +229,7 @@ function isSquare(queue, ctx){
             }
         }
     }
+        
     
     if(angleCount == 3){
         // Get the max X, Y and min X, Y
@@ -163,14 +262,11 @@ function isSquare(queue, ctx){
 }
 
 // Smooth out a line given the points
-function drawSmoothLine(queue, currentCanvas){
+function makeSmoothLine(queue, currentCanvas){
         if(queue.length < 5){
             return [];
         }
     
-        currentCanvas.beginPath();
-        currentCanvas.moveTo(queue[0].x, queue[0].y);
-
         var tempQueue1 = [queue[0]];
         for (var i = 1; i < queue.length - 1;  i = i+1) {
             var c = (queue[i].x + queue[i + 1].x) / 2;
@@ -191,23 +287,6 @@ function drawSmoothLine(queue, currentCanvas){
             var d = (tempQueue2[i].y + tempQueue2[i + 1].y) / 2;
             tempQueue.push({x:c, y:d});
         }
-
-        for (var i = 1; i < tempQueue.length - 2;  i = i+1) {
-            var c = (tempQueue[i].x + tempQueue[i + 1].x) / 2;
-            var d = (tempQueue[i].y + tempQueue[i + 1].y) / 2;
-            currentCanvas.quadraticCurveTo(tempQueue[i].x, tempQueue[i].y, c, d);
-        }
-
-        // For the last 2 points
-        currentCanvas.quadraticCurveTo(
-        tempQueue[i].x,
-        tempQueue[i].y,
-        tempQueue[i+1].x,
-        tempQueue[i+1].y
-        );
-        currentCanvas.stroke();
-        queue = [];
-        currentCanvas.closePath();
         
         return tempQueue;
 }

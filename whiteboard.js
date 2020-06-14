@@ -55,23 +55,65 @@ window.addEventListener('load', () => {
                 case 'rect':
                     drawContex.beginPath();
                     squareCord = canvasObjects[j];
+                    if(squareCord.style == "bold"){
+                        drawContex.lineWidth = "2";
+                    }
                     drawContex.rect(squareCord.x, squareCord.y, squareCord.width, squareCord.height);
                     drawContex.stroke();
+
+                    if(squareCord.text != null){
+                        drawContex.font = "16px Arial";
+                        drawContex.textAlign="center"; 
+                        drawContex.textBaseline = "middle"
+                        drawContex.fillText(squareCord.text, squareCord.x + squareCord.width/2, squareCord.y + squareCord.height/2);
+                    }
+
                     drawContex.closePath();
                     break;
+
             }
+
+        // Reset defaults
+        drawContex.lineWidth = "1";
         }
     }
     
     var dragRect = null
     var dragOffset = {x: 0, y: 0};
-    function startPosition(e){
+    resizeRect = null;
+    resizeRectOffset = {x: 0, y: 0, width: 0, height:0};
+    function mouseDown(e){
+        if(activeTextInput){
+            // Clear any active text inputs
+            if(activeTextInput.text == 'type..'){
+                activeTextInput.text = '';
+            }
+            activeTextInput = null;
+        }
+
+        if(dragRect){
+            dragRect = null;
+            return;
+        }
+
         rect = hitDetection(e);
         if(rect){
-            mouse = getMousePos(canvas, e)
-            dragRect = rect;
-            dragOffset.x = mouse.x - rect.x;
-            dragOffset.y = mouse.y - rect.y;
+            // drag or resize?
+            newRect = {type: 'rect', x: rect.x + 20, y: rect.y + 20, width: rect.width - 40, height: rect.height - 40}
+            mouse = {x: e.offsetX, y: e.offsetY}
+            if(!isHit(mouse, newRect)){
+                resizeRect = rect;
+                resizeRectOffset.x = mouse.x;
+                resizeRectOffset.y = mouse.y;
+                resizeRectOffset.width = rect.width;
+                resizeRectOffset.height = rect.height;
+
+            }else{
+                mouse = getMousePos(canvas, e)
+                dragRect = rect;
+                dragOffset.x = mouse.x - rect.x;
+                dragOffset.y = mouse.y - rect.y;
+            }
             return;
         }
 
@@ -79,13 +121,32 @@ window.addEventListener('load', () => {
         ctx.lineWidth = 1;
         ctx.lineCap = "round";
         ctx.beginPath();
-        
-        draw(e);
     }
-    function finishedPosition(e){
+
+
+    activeTextInput = null;
+    function mouseUp(e){
         if(dragRect){
+
+            activeTextInput = dragRect;
+           
             dragRect = null
             redraw = true;
+            return;
+        }
+
+        if(resizeRect){
+            // Check if the shape was flipped and adjust it
+            if(resizeRect.width < 0){
+                resizeRect.x = resizeRect.x + resizeRect.width;
+                resizeRect.width = Math.abs(resizeRect.width);
+            }
+            if(resizeRect.height < 0){
+                resizeRect.y = resizeRect.y + resizeRect.height;
+                resizeRect.height = Math.abs(resizeRect.height);
+            }
+
+            resizeRect = null;
             return;
         }
         
@@ -96,13 +157,14 @@ window.addEventListener('load', () => {
         // Check for a square
         squareCord = isSquare(linePoints, ctx);
         if(squareCord){
-            rect = {type: 'rect', x: squareCord.x, y: squareCord.y, width: squareCord.width, height: squareCord.height};
+            rect = {type: 'rect', x: squareCord.x, y: squareCord.y, width: squareCord.width, height: squareCord.height, style: 'bold', text: 'type..'};
             canvasObjects.push(rect)
             redraw = true;
             
             // We want to select the rectangle to allow the user to move it around
             mouse = getMousePos(canvas, e)
             dragRect = rect;
+            activeTextInput = dragRect;
             dragOffset.x = mouse.x - rect.x;
             dragOffset.y = mouse.y - rect.y;
 
@@ -119,7 +181,8 @@ window.addEventListener('load', () => {
         
     }
 
-    function draw(e){
+    hoverRect = null
+    function mouseMove(e){
         if(dragRect){
             mouse = getMousePos(canvas, e);
             dragRect.x = mouse.x - dragOffset.x;
@@ -127,7 +190,41 @@ window.addEventListener('load', () => {
             redraw = true;
             return;
         }
+        if(resizeRect){
+            mouse = getMousePos(canvas, e);
+            resizeRect.width = resizeRectOffset.width + (mouse.x - resizeRectOffset.x);
+            resizeRect.height = resizeRectOffset.height + (mouse.y - resizeRectOffset.y);
+
+            redraw = true;
+            return;
+        }
         if(!painting){
+            let activeRect = hitDetection(e);
+
+            if(activeRect){
+                // Check if we're on the edge
+                newRect = {type: 'rect', x: activeRect.x + 20, y: activeRect.y + 20, width: activeRect.width - 40, height: activeRect.height - 40}
+                mouse = {x: e.offsetX, y: e.offsetY}
+                if(isHit(mouse, newRect)){
+                    document.body.style.cursor = "default";
+                }else{
+                    document.body.style.cursor = "pointer";
+                }
+                redraw = true;
+            }else{
+                document.body.style.cursor = "default";
+            }
+
+            if(hoverRect != activeRect){
+                if(!activeRect){
+                    hoverRect.style = "normal"
+                }
+                if(!hoverRect){
+                    activeRect.style = "bold"
+                }
+                hoverRect = activeRect;
+                redraw = true;
+            }
             return;
         }
         
@@ -168,24 +265,44 @@ window.addEventListener('load', () => {
         for(let i = canvasObjects.length - 1; i >= 0; i--){
             if(canvasObjects[i].type == 'rect'){
                 rect = canvasObjects[i]
-                if(rect.x <= mouse.x && mouse.x <= rect.x + rect.width &&
-                    rect.y <= mouse.y && mouse.y <= rect.y + rect.height){
-                        return rect;
-                    }
+                if(isHit(mouse, rect)){
+                    return rect;
+                }
             }
         }
        return null;
     }
+
+    function isHit(mouse, rect){
+        return (rect.x <= mouse.x && mouse.x <= rect.x + rect.width && rect.y <= mouse.y && mouse.y <= rect.y + rect.height);   
+    }
     
-    canvas.addEventListener("mousedown", startPosition);
-    canvas.addEventListener("mouseup", finishedPosition);
-    canvas.addEventListener("mousemove", draw);
+    canvas.addEventListener("mousedown", mouseDown);
+    canvas.addEventListener("mouseup", mouseUp);
+    canvas.addEventListener("mousemove", mouseMove);
     document.addEventListener('keydown', function(event) {
-      if (event.ctrlKey && event.key === 'z') {
-        undo();
-      }
-      if (event.ctrlKey && event.key === 'y') {
-          redo();
+        if (event.ctrlKey && event.key === 'z') {
+            undo();
+        }
+        if (event.ctrlKey && event.key === 'y') {
+            redo();
+        }
+        else{
+            if(activeTextInput){
+                if(activeTextInput.text == 'type..'){
+                    activeTextInput.text = '';
+                }
+
+                if(event.keyCode == 8 || event.keyCode == 46){
+                    activeTextInput.text = activeTextInput.text.substring(0, activeTextInput.text.length - 1);
+                }
+                else if (event.keyCode == 13){
+                    activeTextInput = null;
+                }else{
+                    activeTextInput.text += event.key;
+                }
+                redraw = true;
+            }
         }
     });
 
@@ -245,7 +362,7 @@ function resizeWindow(){
 // Try and figure out if they drew a square
 function isSquare(queue, ctx){
     if(queue.length < 15){
-        return;
+        return null;
     }    
     
     // Are the start and end point pretty close?
